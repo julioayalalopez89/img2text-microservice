@@ -1,3 +1,4 @@
+const fs = require('fs/promises');
 const { imageToText } = require('../services/img2text.service');
 
 async function processImage(req, res) {
@@ -36,6 +37,11 @@ async function processImage(req, res) {
 
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  } finally {
+    // Borrar siempre el archivo subido, haya ido bien o mal
+    if (req.file) {
+      await fs.unlink(req.file.path).catch(() => {});
+    }
   }
 }
 
