@@ -1,0 +1,45 @@
+# CI en cada pull request: instala dependencias, pasa los tests y comprueba que
+# la imagen Docker compila y arranca. No necesita secrets.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t img2text:ci .
+
+      - name: Smoke test del contenedor
+        run: |
+          docker run -d --name img2text -p 3000:3000 img2text:ci
+          for i in $(seq 1 15); do
+            if curl -fs http://localhost:3000/healthz; then echo; echo "✅ /healthz OK"; exit 0; fi
+            sleep 2
+          done
+          docker logs img2text
+          exit 1

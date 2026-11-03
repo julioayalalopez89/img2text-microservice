@@ -1,0 +1,95 @@
+# Construye la imagen en Azure Container Registry y la despliega en Azure
+# Container Apps, en el mismo Azure que appointments-service.
+#
+# Solo corre de verdad si están configurados los secrets/variables de Azure.
+# Si faltan, el job se salta con un aviso (no falla). Ver docs/AZURE_SETUP.md.
+
+name: Build and deploy img2text
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write   # login OIDC en Azure
+  contents: read
+
+env:
+  IMAGE_NAME: img2text-api
+  CONTAINERAPP_NAME: img2text-api
+
+jobs:
+  check-config:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          missing=""
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ACR_NAME RESOURCE_GROUP; do
+            [ -z "${!v}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning::Deploy saltado: falta configurar$missing (ver docs/AZURE_SETUP.md)"
+            echo "⚠️ Deploy saltado: falta configurar$missing" >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-deploy:
+    needs: check-config
+    if: needs.check-config.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image (ACR Tasks)
+        run: |
+          az acr build \
+            --registry "${{ vars.ACR_NAME }}" \
+            --image "${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --image "${{ env.IMAGE_NAME }}:latest" \
+            .
+
+      - name: Install Container Apps CLI extension
+        run: az extension add --name containerapp --upgrade
+
+      - name: Deploy new image to Container Apps
+        run: |
+          az containerapp update \
+            --name "${{ env.CONTAINERAPP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+
+      - name: Smoke test (/healthz)
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${{ env.CONTAINERAPP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          URL="https://$FQDN"
+          echo "### img2text desplegado: $URL" >> "$GITHUB_STEP_SUMMARY"
+          for i in $(seq 1 18); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$URL/healthz" || echo 000)
+            echo "Intento $i: /healthz -> $CODE"
+            [ "$CODE" = "200" ] && { echo "✅ Smoke test OK" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+            sleep 10
+          done
+          echo "❌ /healthz no respondió 200 tras el deploy" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
