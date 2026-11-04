@@ -74,6 +74,34 @@ Ejemplo en HTML con color:
 curl -F image=@foto.png -F color=true -F html=true http://localhost:3000/api/ocr
 ```
 
+## Modos
+
+El campo `mode` elige el tipo de salida (por defecto `ascii`):
+
+| `mode` | Respuesta | Qué hace |
+|---|---|---|
+| `ascii` | `{ success, text }` | El carácter depende del brillo del píxel (opciones de la tabla anterior). |
+| `pic2html` | `{ success, mode, text }` | HTML: un `<span>` por carácter con el color del píxel. Los caracteres se van alternando (no dependen del brillo); lo que dibuja la imagen es el color. |
+| `pic2html3` | `{ success, mode, layers }` | Tres bloques `<pre>` (capas oscura, media y clara según el brillo: `< 85`, `< 170`, resto). Pensado para superponerlos con colores distintos. |
+
+Opciones de `pic2html` y `pic2html3`:
+
+| Campo | Tipo | Por defecto | Descripción |
+|---|---|---|---|
+| `charWidth` | entero | `100` | Ancho en caracteres (el alto sale de la proporción de la imagen). |
+| `characters` | texto | `01` | Caracteres que se van usando. |
+| `textType` | `sequence`/`random` | `sequence` | Recorrer los caracteres en orden o elegirlos al azar. |
+| `grayscale` | `true`/`false` | `false` | Solo `pic2html`: colores en escala de grises. |
+| `bgColor` | color CSS | `black` | Solo `pic2html`: fondo del `<div>` (nombre, `#hex` o `rgb(...)`). |
+| `fontSize` | número | `7` | Solo `pic2html`: tamaño de fuente y alto de línea en px. |
+
+```bash
+curl -F image=@foto.png -F mode=pic2html -F charWidth=120 -F characters=JULIO http://localhost:3000/api/ocr
+curl -F image=@foto.png -F mode=pic2html3 -F textType=random http://localhost:3000/api/ocr
+```
+
+Un `mode` desconocido responde `400`.
+
 ## Estructura
 
 ```
@@ -83,5 +111,6 @@ src/
   routes/img2text.routes.js # POST /api/ocr
   controllers/              # lee las opciones y borra el archivo subido
   services/                 # conversión imagen → texto y filtros (contraste, gamma, dither, bordes, color)
+  services/pic2html.service.js # modos pic2html y pic2html3
   middlewares/              # subida con multer
 ```
