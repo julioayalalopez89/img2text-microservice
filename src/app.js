@@ -15,6 +15,11 @@ app.get('/', (req, res) => {
   });
 });
 
+// Health check para el contenedor / Azure
+app.get('/healthz', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 // Rutas OCR
 app.use('/api/ocr', ocrRoutes);
 

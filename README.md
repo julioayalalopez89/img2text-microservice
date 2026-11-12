@@ -52,6 +52,7 @@ Si no se envía imagen responde `400` con `{ "success": false, "error": "No imag
 si falla el procesado, `500` con el mensaje de error.
 
 `GET /` devuelve el estado del servicio (`{ "service": ..., "status": "running" }`).
+`GET /healthz` responde `200` con `{ "status": "ok" }` (health check del contenedor).
 
 ### Opciones (campos del formulario)
 
@@ -101,6 +102,26 @@ curl -F image=@foto.png -F mode=pic2html3 -F textType=random http://localhost:30
 ```
 
 Un `mode` desconocido responde `400`.
+
+## Tests
+
+```bash
+npm test   # node:test, sin dependencias extra
+```
+
+## Docker
+
+```bash
+docker build -t img2text .
+docker run -p 3000:3000 img2text
+```
+
+La imagen instala las librerías de sistema que necesita `canvas` (Cairo, Pango, libjpeg, libgif, librsvg).
+
+## CI y despliegue
+
+- **CI** (`.github/workflows/ci.yml`): en cada pull request, `npm ci` + `npm test` (Node 20 y 22) y build + arranque de la imagen Docker.
+- **Deploy** (`.github/workflows/deploy.yml`): en cada push a `main`, build en Azure Container Registry y despliegue en Azure Container Apps (mismo Azure que appointments-service). Si faltan los secrets de Azure se salta con un aviso. Configuración: [docs/AZURE_SETUP.md](docs/AZURE_SETUP.md).
 
 ## Estructura
 
